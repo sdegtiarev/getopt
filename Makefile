@@ -1,13 +1,10 @@
 
-DC= dmd
-CC= dmd
-
-
-%: %.d
-	$(DC) $(DFLAGS) $<
-	@rm -f getopt.o
 	
-all: getopt
+all: opt
+
+opt: opt.d getopt.d
+	dmd opt.d getopt.d
+	@rm -f *.o
 
 clean:
-	@rm -f *.o getopt
+	@rm -f opt *.o core
