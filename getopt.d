@@ -17,7 +17,7 @@ struct Option
 			if(indexOf(input, tag))
 				return false;
 			input=input[tag.length..$];
-			return true;
+			return matchExact? (input == "") : true;
 
 		} else {
 			auto opt=input;
@@ -27,8 +27,10 @@ struct Option
 	}
 
 	@property bool shortOption() { return tag.length == 2; }
+	@property bool longOption() { return tag.length > 2; }
 	@property bool needArg() { return !(argType is null); }
-	@property bool matchEqualSign() { return !shortOption && needArg; }
+	@property bool matchEqualSign() { return longOption && needArg; }
+	@property bool matchExact() { return longOption && !needArg; }
 };
 
 
@@ -243,7 +245,7 @@ private void match_option(string opt, ref string[] arg, Option[] cmd)
 		return;
 	}
 
-	enforce(false, "getopt: invalid option '"~opt~"' with '"~val~"'");
+	enforce(false, "getopt: invalid option '"~opt~"'");
 }
 
 
