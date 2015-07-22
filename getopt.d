@@ -1,21 +1,19 @@
 module local.getopt;
-import std.traits;
-import std.string;
-import std.regex;
-import std.typecons : tuple, Tuple;
-import std.exception : enforce;
 
 
 
 struct Option
 {
 	void delegate(string s) handle;
-	matchType mtype;
+	Match mtype;
 	string argType=null;
 	string help, tag;
 
 	private bool match(ref string input) {
-		if(mtype == matchType.text) {
+		import std.string : indexOf;
+		import std.regex : regex,replaceFirst;
+
+		if(mtype == Match.text) {
 			if(indexOf(input, tag))
 				return false;
 			input=input[tag.length..$];
@@ -35,7 +33,7 @@ struct Option
 
 
 
-enum matchType { text, regex };
+enum Match { text, regex };
 
 
 
@@ -76,15 +74,15 @@ string optionHelp(T)(T list)
 private void option_tree(T...)(ref Option[] tree, T cmd)
 {
 	static if(cmd.length > 0) {
-		static if(is(typeof(cmd[0]) == matchType))
+		static if(is(typeof(cmd[0]) == Match))
 			option_tree_match(tree, cmd[0], cmd[1..$]);
 		else
-			option_tree_match(tree, matchType.text, cmd);
+			option_tree_match(tree, Match.text, cmd);
 	}
 }
 
 
-private void option_tree_match(T...)(ref Option[] tree, matchType match, T cmd)
+private void option_tree_match(T...)(ref Option[] tree, Match match, T cmd)
 {
 	static if(cmd.length > 0) {
 		auto tag=cmd[0];
@@ -101,10 +99,11 @@ private void option_tree_match(T...)(ref Option[] tree, matchType match, T cmd)
 
 
 
-private void option_build(R, T...)(ref Option[] tree, matchType match, string tag, string help, R receiver, T cmd)
+private void option_build(R, T...)(ref Option[] tree, Match match, string tag, string help, R receiver, T cmd)
 {
     import std.conv : text, to;
 	import std.array : split;
+	import std.traits;
 
 
 	static if(is(typeof(receiver) == delegate) || is(typeof(*receiver) == function)) {
@@ -162,6 +161,7 @@ private void option_build(R, T...)(ref Option[] tree, matchType match, string ta
 		import std.typecons : Tuple, tuple;
 		static auto kv(string input) {
 		    auto i=indexOf(input, '=');
+		    assert(i > 0, "invalid value for map '"~input~"'");
 		    auto key=input[0..i];
 		    auto val=input[i+1..$];
 		    return tuple!("key","val")(to!V(key), to!U(val));
@@ -219,6 +219,7 @@ private void option_parse(ref string[] arg, Option[] cmd)
 
 private void match_option(string opt, ref string[] arg, Option[] cmd)
 {
+	import std.exception : enforce;
 
 	string val="EMPTY";
 	foreach(tag; cmd) {
@@ -234,13 +235,14 @@ private void match_option(string opt, ref string[] arg, Option[] cmd)
 					val=shift(arg);
 				}
 			} else {
-			// unbundle option and keep the rest for processing
+			// unbundle option and keep the rest for further processing
 				if(val != "") { unshift("-"~val, arg); val=""; }
 			}
 		}
 		tag.handle(val);
 		return;
 	}
+
 	enforce(false, "getopt: invalid option '"~opt~"' with '"~val~"'");
 }
 

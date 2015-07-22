@@ -22,14 +22,14 @@ void main(string arg[])
 		, "-c", "character array", &ch
 		, "-d", "argumentless functor", delegate { writeln("delegate() is called");}
 		, "-s", "function with one argument", delegate(string data) { writeln("delegate(",data,") is called");}
-		, matchType.regex, "-f", "argumentless functor", &f
+		, Match.regex, "-f", "argumentless functor", &f
 		, "-g", "function with one argument", &g
 		, "--force", "boolean flag", &sink
 		, "-r", &flag
 		, "-o|--output", "file name", &file
 		, "-w|--what", "one of 'one','two','three'", &what
 		, "-V|--vector", "integer array", &v
-		, matchType.regex, "-M|--map", "associative array", &m
+		, Match.regex, "-M|--map", "associative array", &m
 		, "-h|--help", "this help", &help
 		, "-A", &sink
 		, "-q", "be quiet", &verb, false
