@@ -32,7 +32,7 @@ struct Option
 
 
 
-
+enum matchType { matchText, matchRegex };
 
 
 
@@ -262,13 +262,13 @@ void main(string arg[])
 		, "-q", "be quiet", &verb, false
 		, "-v", "verbose (opposite of quiet)", &verb, true
 	); } catch(Exception x) {
-		writeln(x.msg);
+		writeln("error: ",x.msg);
 		writeln("--------------------------------------------------------\n", optionHelp(opt));
 		return;
 	}
 
-	writeln(typeof(sort!("a.tag < b.tag")(opt)).stringof);
-	writeln(optionHelp(opt[0]));
+	//writeln(typeof(sort!("a.tag < b.tag")(opt)).stringof);
+	//writeln(optionHelp(opt[0]));
 
 	if(help)
 		writeln("--------------------------------------------------------\n", optionHelp(sort!("a.tag < b.tag")(opt)));
@@ -282,7 +282,6 @@ void main(string arg[])
 		, "\n  map=", m
 		, "\n  ch=", ch
 		, "\n  quiet=", !verb
-		, "\n  help=", help
 		, "\nremaining args: ", arg
 	);
 }
