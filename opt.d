@@ -22,23 +22,24 @@ void main(string arg[])
 		, "-c", "character array", &ch
 		, "-d", "argumentless functor", delegate { writeln("delegate() is called");}
 		, "-s", "function with one argument", delegate(string data) { writeln("delegate(",data,") is called");}
-		, "-f", "argumentless functor", &f
+		, matchType.regex, "-f", "argumentless functor", &f
 		, "-g", "function with one argument", &g
 		, "--force", "boolean flag", &sink
 		, "-r", &flag
 		, "-o|--output", "file name", &file
 		, "-w|--what", "one of 'one','two','three'", &what
 		, "-V|--vector", "integer array", &v
-		, "-M|--map", "associative array", &m
+		, matchType.regex, "-M|--map", "associative array", &m
 		, "-h|--help", "this help", &help
 		, "-A", &sink
-		////, "-.*", &help
-		////, "-?", &help
 		, "-q", "be quiet", &verb, false
 		, "-v", "verbose (opposite of quiet)", &verb, true
+		//, "-1234", &sink
+		//, "-.*", &sink
+		//, "-?", &sink
 	); } catch(Exception x) {
-		writeln("error: ",x.msg);
-		writeln("--------------------------------------------------------\n", optionHelp(opt));
+		writeln("error: ",x.msg, "\n--------------------------------------------------------");
+		writeln(optionHelp(opt));
 		return;
 	}
 
@@ -46,10 +47,10 @@ void main(string arg[])
 	//writeln(optionHelp(opt[0]));
 
 	if(help)
-		writeln("--------------------------------------------------------\n", optionHelp(sort!("a.tag < b.tag")(opt)));
+		writeln(optionHelp(sort!("a.tag < b.tag")(opt)));
 	
 
-	if(flag) writeln("result:"
+	if(flag) writeln("-------- result --------"
 		, "\n  x=", x
 		, "\n  file=", file
 		, "\n  choise=", what

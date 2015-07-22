@@ -1,38 +1,41 @@
 module local.getopt;
-import std.stdio;
 import std.traits;
+import std.string;
 import std.regex;
 import std.typecons : tuple, Tuple;
+import std.exception : enforce;
+
 
 
 struct Option
 {
 	void delegate(string s) handle;
+	matchType mtype;
 	string argType=null;
 	string help, tag;
 
 	private bool match(ref string input) {
-		auto opt=input;
-		input=replaceFirst(opt, rx(), "");
-		return opt != input;
+		if(mtype == matchType.text) {
+			if(indexOf(input, tag))
+				return false;
+			input=input[tag.length..$];
+			return true;
+
+		} else {
+			auto opt=input;
+			input=replaceFirst(opt, regex("^"~tag), "");
+			return opt != input;
+		}
 	}
 
-	private auto rx() {
-		if(shortOption)
-			return regex("^"~tag);
-		else if(needArg)
-			return regex("^"~tag~"=");
-		else
-			return regex("^"~tag~"$");
-	}
-
-	@property bool shortOption() { return tag.length == 2 && tag[0] == '-'; }
+	@property bool shortOption() { return tag.length == 2; }
 	@property bool needArg() { return !(argType is null); }
+	@property bool matchEqualSign() { return !shortOption && needArg; }
 };
 
 
 
-enum matchType { matchText, matchRegex };
+enum matchType { text, regex };
 
 
 
@@ -42,8 +45,7 @@ void getopt(T...)(ref Option[] opt, ref string[] arg, T cmd)
 	option_tree(opt, cmd);
 
 	string prog=shift(arg);
-	//option_parse(arg, opt);
-	getopt_impl(arg, opt);
+	option_parse(arg, opt);
 	unshift(prog, arg);
 }
 
@@ -58,7 +60,9 @@ string optionHelp(T)(T list)
 	
 	string help;
 	foreach(opt; list) {
-		string s=opt.tag~((!opt.shortOption && opt.needArg)? "=":" ")~opt.argType;
+		//string s=opt.tag~((!opt.shortOption && opt.needArg)? "=":" ")~opt.argType;
+		string s=opt.tag~(opt.shortOption? " ":"")~opt.argType;
+		if(opt.help == "") opt.help="not documented";
 		help~=format("%-*s    - %s\n", len, s, opt.help);
 	}
 	return help;
@@ -72,21 +76,32 @@ string optionHelp(T)(T list)
 private void option_tree(T...)(ref Option[] tree, T cmd)
 {
 	static if(cmd.length > 0) {
+		static if(is(typeof(cmd[0]) == matchType))
+			option_tree_match(tree, cmd[0], cmd[1..$]);
+		else
+			option_tree_match(tree, matchType.text, cmd);
+	}
+}
+
+
+private void option_tree_match(T...)(ref Option[] tree, matchType match, T cmd)
+{
+	static if(cmd.length > 0) {
 		auto tag=cmd[0];
 		static if(is(typeof(cmd[1]) == string)) {
 			auto help=cmd[1];
 			auto receiver=cmd[2];
-			option_tree_1(tree, tag, help, receiver, cmd[3..$]);
+			option_build(tree, match, tag, help, receiver, cmd[3..$]);
 		} else {
 			auto receiver=cmd[1];
-			option_tree_1(tree, tag, "", receiver, cmd[2..$]);
+			option_build(tree, match, tag, "", receiver, cmd[2..$]);
 		}
 	}
 }
 
 
 
-private void option_tree_1(R, T...)(ref Option[] tree, string tag, string help, R receiver, T cmd)
+private void option_build(R, T...)(ref Option[] tree, matchType match, string tag, string help, R receiver, T cmd)
 {
     import std.conv : text, to;
 	import std.array : split;
@@ -97,11 +112,14 @@ private void option_tree_1(R, T...)(ref Option[] tree, string tag, string help, 
 
 		static if(ParameterTypeTuple!receiver.length == 0) {
 		// argumentless switch, functor with no parameters
-			addOption(tree, Option(delegate(string){ receiver(); }, null, help), tag);
+			typeof(Option.handle) handle=delegate(string){ receiver(); };
+			add_option(tree, Option(handle, match, null, help), tag);
 
 		} else static if(ParameterTypeTuple!receiver.length == 1) {
 		// argument with parameter, one argument functor
-			addOption(tree, Option(delegate(string s){ receiver(to!(ParameterTypeTuple!receiver[0])(s)); }, " <"~ParameterTypeTuple!receiver[0].stringof~">", help), tag);
+			typeof(Option.handle) handle=delegate(string s){ receiver(to!(ParameterTypeTuple!receiver[0])(s)); };
+			auto arg=" <"~ParameterTypeTuple!receiver[0].stringof~">";
+			add_option(tree, Option(handle, match, arg, help), tag);
 
 		} else {
 		// functor with more than one argument, error
@@ -113,10 +131,12 @@ private void option_tree_1(R, T...)(ref Option[] tree, string tag, string help, 
 		} else static if(is(typeof(*receiver) == bool)) {
 		// bool pointer passed as option handler, assuming no argumnets
 		static if(cmd.length && is(typeof(cmd[0]) == bool)) {
-			addOption(tree, Option(delegate(string){ *receiver=cmd[0]; }, null, help), tag);
+			typeof(Option.handle) handle=delegate(string){ *receiver=cmd[0]; };
+			add_option(tree, Option(handle, match, null, help), tag);
 			option_tree(tree, cmd[1..$]);
 		} else {
-			addOption(tree, Option(delegate(string){ *receiver=true; }, null, help), tag);
+			typeof(Option.handle) handle=delegate(string){ *receiver=true; };
+			add_option(tree, Option(handle, match, null, help), tag);
 			option_tree(tree, cmd);
 		}
 
@@ -124,12 +144,16 @@ private void option_tree_1(R, T...)(ref Option[] tree, string tag, string help, 
 	} else static if(is(typeof(*receiver) == string)) {
 	// to distinguish string and array, just assign
 
-		addOption(tree, Option(delegate(string val){ *receiver=val; }, "<"~typeof(*receiver).stringof~">", help), tag);
+		typeof(Option.handle) handle=delegate(string val){ *receiver=val; };
+		auto arg="<"~typeof(*receiver).stringof~">";
+		add_option(tree, Option(handle, match, arg, help), tag);
 		option_tree(tree, cmd);
 
 	} else static if(is(typeof(*receiver) == U[], U)) {
 	// array pointer passed, convert argument and push into
-		addOption(tree, Option(delegate(string val){ foreach(v; split(val,",")) (*receiver)~=to!U(v); }, "<"~typeof(*receiver).stringof~">", help), tag);
+		auto handle=delegate(string val){ foreach(v; split(val,",")) (*receiver)~=to!U(v); };
+		auto arg="<"~typeof(*receiver).stringof~">";
+		add_option(tree, Option(handle, match, arg, help), tag);
 		option_tree(tree, cmd);
 
 	} else static if(is(typeof(*receiver) == U[V], U, V)) {
@@ -142,12 +166,16 @@ private void option_tree_1(R, T...)(ref Option[] tree, string tag, string help, 
 		    auto val=input[i+1..$];
 		    return tuple!("key","val")(to!V(key), to!U(val));
 		}
-		addOption(tree, Option(delegate(string val){ foreach(x; split(val,",")) { auto v=kv(x); (*receiver)[v.key]=v.val; }}, "<"~typeof(*receiver).stringof~">", help), tag);
+		typeof(Option.handle) handle=delegate(string val){ foreach(x; split(val,",")) { auto v=kv(x); (*receiver)[v.key]=v.val; }};
+		auto arg="<"~typeof(*receiver).stringof~">";
+		add_option(tree, Option(handle, match, arg, help), tag);
 		option_tree(tree, cmd);
 
 	} else static if(is(typeof(receiver) == U*, U)) {
 	// some generic pointer passed as option handler, convert argument and assign
-		addOption(tree, Option(delegate(string val){ *receiver=to!(typeof(*receiver))(val); }, "<"~typeof(*receiver).stringof~">", help), tag);
+		auto handle=delegate(string val){ *receiver=to!(typeof(*receiver))(val); };
+		auto arg="<"~typeof(*receiver).stringof~">";
+		add_option(tree, Option(handle, match, arg, help), tag);
 		option_tree(tree, cmd);
 
 	} else {
@@ -157,12 +185,15 @@ private void option_tree_1(R, T...)(ref Option[] tree, string tag, string help, 
 }
 
 
-private void addOption(T...)(ref Option[] tree, Option opt, string tag)
+private void add_option(T...)(ref Option[] tree, Option opt, string tag)
 {
 	import std.array : split;
 	auto ref_tag=split(tag, "|")[0], ref_help=opt.help;
 	foreach(v; split(tag, "|")) {
+		assert((v.length == 2 && v[0] == '-') || (v.length > 2 && v[0] == '-' && v[1] == '-'), "neither short nor long option '"~v~"'");
+		//enforce((v.length == 2 && v[0] == '-') || (v.length > 2 && v[0] == '-' && v[1] == '-'), "getopt: neither short nor long option '"~v~"'");
 		opt.tag=v;
+		if(opt.matchEqualSign) opt.tag~="=";
 		opt.help=ref_help;
 		ref_help="same as "~ref_tag;
 		tree~=opt;
@@ -173,42 +204,44 @@ private void addOption(T...)(ref Option[] tree, Option opt, string tag)
 
 
 
-private void getopt_impl(ref string[] arg, Option[] cmd)
+private void option_parse(ref string[] arg, Option[] cmd)
 {
 	while(arg.length && arg[0][0] == '-') {
 		auto opt=shift(arg);
 		if(opt == "--")
 				return;
 
-		processOption(opt, arg, cmd);
+		match_option(opt, arg, cmd);
 	}
 }
 
 
 
-private void processOption(string opt, ref string[] arg, Option[] cmd)
+private void match_option(string opt, ref string[] arg, Option[] cmd)
 {
 
+	string val="EMPTY";
 	foreach(tag; cmd) {
-		auto val=opt;
+		val=opt;
 		if(!tag.match(val))
 				continue;
 
 		if(tag.shortOption) {
 			if(tag.needArg) {
+			// find either bundled or unbundled argument
 				if(val == "") {
-					if(arg.length == 0)
-						throw new Exception("getopt: "~tag.tag~" requires an argument");
+					enforce(arg.length,"getopt: "~tag.tag~" requires an argument");
 					val=shift(arg);
 				}
 			} else {
+			// unbundle option and keep the rest for processing
 				if(val != "") { unshift("-"~val, arg); val=""; }
 			}
 		}
 		tag.handle(val);
 		return;
 	}
-	throw new Exception("getopt: invalid option '"~opt~"'");
+	enforce(false, "getopt: invalid option '"~opt~"' with '"~val~"'");
 }
 
 
