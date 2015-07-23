@@ -17,37 +17,44 @@ void main(string arg[])
 
 	Option[] opt;
 	try {
-		getopt(opt, arg
-		, "-x", "integer option", &x
-		, "-c", "character array", &ch
-		, "-d", "argumentless functor", delegate { writeln("delegate() is called");}
-		, "-s", "function with one argument", delegate(string data) { writeln("delegate(",data,") is called");}
-		, Match.regex, "-f", "argumentless functor", &f
-		, "-g", "function with one argument", &g
-		, "--force", "boolean flag", &sink
-		, "-r", &flag
-		, "-o|--output", "file name", &file
-		, "-w|--what", "one of 'one','two','three'", &what
-		, "-V|--vector", "integer array", &v
-		, Match.regex, "-M|--map", "associative array", &m
-		, "-h|--help", "this help", &help
-		, "-A", &sink
-		, "-q", "be quiet", &verb, false
-		, "-v", "verbose (opposite of quiet)", &verb, true
-		//, "-1234", &sink
-		//, "-.*", &sink
-		//, "-?", &sink
-	); } catch(Exception x) {
+		auto r=getopt(opt, arg
+			, noThrow.yes
+			, "x", "integer option", &x
+			, "c", "character array", &ch
+			, "d", "argumentless functor", delegate { writeln("delegate() is called");}
+			, "s", "function with one argument", delegate(string data) { writeln("delegate(",data,") is called");}
+			, Match.regex, "f", "argumentless functor", &f
+			, "g", "function with one argument", &g
+			, "force", "boolean flag", &sink
+			, "r", &flag
+			, "o|output", "file name", &file
+			, "w|what", "one of 'one','two','three'", &what
+			, "V|vector", "integer array", &v
+			, "M|map", "associative array", &m
+			, "h|help", "this help", &help
+			, "A", &sink
+			, "q", "be quiet", &verb, false
+			, "v", "verbose (opposite of quiet)", &verb, true
+			, Match.regex, "l.*", delegate(string key,int val){ writeln("called L('",key,"',",val,")");}
+			, Match.regex, ".", delegate(char key,string val){ writeln("switch ", key, "(",val,")");}
+			, Match.regex, "[0-9]+", delegate(int key,string val){ writeln("translate ", key, " => ",val);}
+			, Match.regex, "A[A-Z]+",  delegate(string key,string val){ writeln("login: ",key,", password: ", val);}
+			, Match.regex, "B(.*)",  delegate(string key,string val){ writeln("login: ",key,", password: ", val);}
+			, "h|help|?", "this help", &help
+		);
+		if(r) {
+			writeln("getopt: ",r.msg, "\n--------------------------------------------------------");
+			writeln(optionHelp(opt));
+			return;
+		}
+	} catch(Exception x) {
 		writeln("error: ",x.msg, "\n--------------------------------------------------------");
 		writeln(optionHelp(opt));
 		return;
 	}
 
-	//writeln(typeof(sort!("a.tag < b.tag")(opt)).stringof);
-	//writeln(optionHelp(opt[0]));
-
 	if(help)
-		writeln(optionHelp(sort!("a.tag < b.tag")(opt)));
+		writeln("Options:\n",optionHelp(sort!("a.tag < b.tag")(opt)));
 	
 
 	if(flag) writeln("-------- result --------"
@@ -62,15 +69,8 @@ void main(string arg[])
 	);
 }
 
-bool ocmp(Option a, Option b) { return a.tag < b.tag; }
 
-void f()
-{
-	writeln("f() is called");
-}
+void f() { writeln("f() is called"); }
 
-void g(string msg)
-{
-	writeln("g(", msg, ") is called");
-}
+void g(string msg) { writeln("g(", msg, ") is called"); }
 
