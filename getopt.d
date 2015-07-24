@@ -1,6 +1,5 @@
 module local.getopt;
 import std.exception;
-//import std.stdio;
 
 
 struct Option
@@ -9,6 +8,7 @@ struct Option
 	Match mtype;
 	string argType=null;
 	string help, tag;
+	int group;
 
 	@property bool shortOption() { return tag.length == 1 && mtype == Match.text; }
 	@property bool longOption() { return tag.length > 1 || mtype == Match.regex; }
@@ -190,11 +190,15 @@ private void option_build(R, T...)(ref Option[] tree, Match match, string tag, s
 private void add_option(T...)(ref Option[] tree, Option opt, string tag)
 {
 	import std.array : split;
+	static int group;
+	++group;
 	auto ref_tag=split(tag, "|")[0], ref_help=opt.help;
+	Option base=opt; base.tag=ref_tag;
 	foreach(v; split(tag, "|")) {
 		opt.tag=v;
+		opt.group=group;
 		opt.help=ref_help;
-		ref_help="same as "~ref_tag;
+		ref_help="same as "~key(base);
 		tree~=opt;
 	}
 }
@@ -256,7 +260,6 @@ private auto match(Option opt, string input) {
 
 	if(opt.mtype == Match.text) {
 		auto pattern=key(opt);
-//writeln("comp  ",input," with ",pattern,": ", indexOf(input, pattern) == 0);
 		if(indexOf(input, pattern))
 			return tuple!("match","arg","val")(false, opt.tag, "");
 		auto val=input[pattern.length..$];
@@ -265,7 +268,6 @@ private auto match(Option opt, string input) {
 
 	} else {
 		auto c=matchFirst(input, local.getopt.regex(opt));
-//writeln("match ",input," with ",local.getopt.regex(opt),": ", !c.empty,"    ", c);
 		string key, val;
 		if(c.length > 2) { key=c[c.length-2]; val=c[c.length-1]; }
 		else if(c.length > 1) { key=c[c.length-1]; }

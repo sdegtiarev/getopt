@@ -31,7 +31,6 @@ void main(string arg[])
 			, "w|what", "one of 'one','two','three'", &what
 			, "V|vector", "integer array", &v
 			, "M|map", "associative array", &m
-			, "h|help", "this help", &help
 			, "A", &sink
 			, "q", "be quiet", &verb, false
 			, "v", "verbose (opposite of quiet)", &verb, true
