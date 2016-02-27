@@ -10,11 +10,10 @@ struct Option
 	string help, tag;
 	int group;
 
-	@property bool shortOption() { return tag.length == 1 && mtype == Match.text; }
-	@property bool longOption() { return tag.length > 1 || mtype == Match.regex; }
+	@property bool isShort() { return !isLong; }
+	@property bool isLong()  { return tag[0..2] == "--"; }
 	@property bool needArg() { return !(argType is null); }
-	@property bool matchEqualSign() { return longOption && needArg; }
-	@property bool exactMatch() { return longOption && !needArg; }
+	@property bool isRegex() { return mtype == Match.regex; }
 };
 
 
@@ -23,16 +22,16 @@ enum Match { text, regex };
 enum noThrow { yes };
 
 
-Exception getopt(T...)(ref Option[] opt, ref string[] arg, T commandLine)
+Exception getopt(T...)(ref Option[] opt, ref string[] arg, T configLine)
 {
 	opt=[];
 	Exception r=null;
-	static if(is(typeof(commandLine[0]) == noThrow)) {
+	static if(is(typeof(configLine[0]) == noThrow)) {
 		immutable bool catchExceptions=true;
-		option_tree(opt, commandLine[1..$]);
+		option_tree(opt, configLine[1..$]);
 	} else {
 		immutable bool catchExceptions=false;
-		option_tree(opt, commandLine);
+		option_tree(opt, configLine);
 	}
 
 	string prog=shift(arg);
@@ -55,7 +54,7 @@ string optionHelp(T)(T list)
 	
 	string help;
 	foreach(opt; list) {
-		string s=key(opt)~(opt.shortOption? " ":"")~opt.argType;
+		string s=key(opt)~(opt.isShort? " ":"")~opt.argType;
 		if(opt.help == "") opt.help="not documented";
 		help~=format("%-*s    - %s\n", len, s, opt.help);
 	}
@@ -67,29 +66,29 @@ string optionHelp(T)(T list)
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
-private void option_tree(T...)(ref Option[] tree, T commandLine)
+private void option_tree(T...)(ref Option[] tree, T configLine)
 {
-	static if(commandLine.length > 0) {
-		static if(is(typeof(commandLine[0]) == Match))
-			option_tree_match(tree, commandLine[0], commandLine[1..$]);
+	static if(configLine.length > 0) {
+		static if(is(typeof(configLine[0]) == Match))
+			option_tree_match(tree, configLine[0], configLine[1..$]);
 		else
-			option_tree_match(tree, Match.text, commandLine);
+			option_tree_match(tree, Match.text, configLine);
 	}
 }
 
 
-private void option_tree_match(T...)(ref Option[] tree, Match match, T commandLine)
+private void option_tree_match(T...)(ref Option[] tree, Match match, T configLine)
 {
 	// we enforce (CT) the next parameter is option tag
-	string tag=commandLine[0];
+	string tag=configLine[0];
 	// the next one may be help string or receiver if help omitted
-	static if(is(typeof(commandLine[1]) == string)) {
-		auto help=commandLine[1];
-		auto receiver=commandLine[2];
-		option_build(tree, match, tag, help, receiver, commandLine[3..$]);
+	static if(is(typeof(configLine[1]) == string)) {
+		auto help=configLine[1];
+		auto receiver=configLine[2];
+		option_build(tree, match, tag, help, receiver, configLine[3..$]);
 	} else {
-		auto receiver=commandLine[1];
-		option_build(tree, match, tag, "", receiver, commandLine[2..$]);
+		auto receiver=configLine[1];
+		option_build(tree, match, tag, "", receiver, configLine[2..$]);
 	}
 }
 
@@ -129,12 +128,13 @@ private void option_build(R, T...)(ref Option[] tree, Match match, string tag, s
 		option_tree(tree, commandLine);
 
 
-		} else static if(is(typeof(*receiver) == bool)) {
+	} else static if(is(typeof(*receiver) == bool)) {
 		// bool pointer passed as option handler, assuming no argumnets
 		static if(commandLine.length && is(typeof(commandLine[0]) == bool)) {
 			typeof(Option.handle) handle=delegate(string key, string val){ *receiver=commandLine[0]; };
 			add_option(tree, Option(handle, match, null, help), tag);
 			option_tree(tree, commandLine[1..$]);
+		// if bool value not passed, assume it's true
 		} else {
 			typeof(Option.handle) handle=delegate(string key, string val){ *receiver=true; };
 			add_option(tree, Option(handle, match, null, help), tag);
@@ -198,7 +198,8 @@ private void add_option(T...)(ref Option[] tree, Option opt, string tag)
 		opt.tag=v;
 		opt.group=group;
 		opt.help=ref_help;
-		ref_help="same as "~key(base);
+		ref_help="same as "~base.tag;
+		enforce(opt.isLong || !opt.isRegex, "short option "~opt.tag~" can't be regex");
 		tree~=opt;
 	}
 }
@@ -229,7 +230,7 @@ private void match_option(string arg, ref string[] commandLine, Option[] optList
 		if(!kv.match)
 				continue;
 
-		if(opt.shortOption) {
+		if(opt.isShort) {
 			if(opt.needArg) {
 			// find either bundled or unbundled argument
 				if(kv.val == "") {
@@ -240,7 +241,7 @@ private void match_option(string arg, ref string[] commandLine, Option[] optList
 			// unbundle option and keep the rest for further processing
 				if(kv.val != "") { unshift("-"~kv.val, commandLine); kv.val=""; }
 			}
-		} else if(opt.longOption && opt.needArg) {
+		} else if(opt.isLong && opt.needArg) {
 			enforce(kv.val != "", key(opt)~" requires an argument");
 		}
 
@@ -263,8 +264,7 @@ private auto match(Option opt, string input) {
 		if(indexOf(input, pattern))
 			return tuple!("match","arg","val")(false, opt.tag, "");
 		auto val=input[pattern.length..$];
-		bool matching=opt.exactMatch? (val == "") : true;
-		return tuple!("match","arg","val")(matching, opt.tag, val);
+		return tuple!("match","arg","val")(true, opt.tag, val);
 
 	} else {
 		auto c=matchFirst(input, local.getopt.regex(opt));
@@ -279,23 +279,14 @@ private auto match(Option opt, string input) {
 
 private auto key(Option opt)
 {
-	auto prefix="-", postfix="";
-	if(opt.longOption) {
-		prefix="--";
-		if(opt.needArg) postfix="=";
-	}
-	return prefix~opt.tag~postfix;
+	if(opt.isLong && opt.needArg) return opt.tag~"=";
+	return opt.tag;
 }
 
 private auto regex(Option opt)
 {
-	auto prefix="^-(", postfix=")(.*)";
-	if(opt.longOption) {
-		prefix="^--(";
-		if(opt.needArg) postfix=")=(.*)";
-		else			postfix=")$";
-	}
-	return prefix~opt.tag~postfix;
+	if(opt.needArg) return "^--("~opt.tag[2..$]~")=(.*)";
+	else			return "^--("~opt.tag[2..$]~")$";
 }
 
 
